@@ -15,12 +15,6 @@ macro_rules! escaped {
     }
 }
 
-macro_rules! escaped_str {
-    ($exp:expr) => {
-        format!("{}\n\r", $exp)
-    }
-}
-
 async fn process_builder_command(_input: String, _addr: SocketAddr, _server_state: Arc<ServerState>, _my_client: ClientPointer) -> String {
 
     match &_input[.._input.find(" ").unwrap_or(_input.len())] {
@@ -62,8 +56,8 @@ async fn process(mut _socket: TcpStream, addr: SocketAddr, server_state: Arc<Ser
     server_state.client_states.lock().await.push(
         client_state.clone()
     );
-    write.write(escaped!("\x1B[2J")).await.unwrap();
-    write.write(escaped!("Welcome to the server.")).await.unwrap();
+    //write.write(escaped!("\x1B[2J")).await.unwrap();
+    write.write(escaped!("@DWelcome to the server.@")).await.unwrap();
     loop {
         let mut string_input = String::new();
         reader.read_line(&mut string_input).await.expect("Read error");
@@ -88,13 +82,13 @@ async fn main() -> std::io::Result<()> {
 
     rooms.insert("nexus".into(), to_arc_mutex(Room {
         addr: "nexus".into(),
-        display: escaped_str! {"The room is quiet... Except for a [sign]."},
+        display: "The room is quiet... Except for a [@Csign@].".into(),
         clients: HashSet::new(),
         links: vec![],
         objects: {
             let mut some_hash = HashMap::new();
             some_hash.insert("sign".into(), GameObject {
-                display: escaped_str! {"Just a sign, I wonder what it says."},
+                display: "Just a sign, I wonder what it says{@Cread@}.".into(),
                 actions: {
                     HashMap::from([
                         ("read".into(), GameAction::PrintText("You're gay.".into()))
