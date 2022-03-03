@@ -9,6 +9,7 @@ pub fn to_arc_mutex<T>(owned: T) -> Arc<Mutex<T>> {
 }
 
 pub type ClientPointer = Arc<Mutex<ClientState>>;
+pub type RoomPointer = Arc<Mutex<Room>>;
 
 pub struct ClientState {
     pub addr: SocketAddr,
@@ -25,7 +26,7 @@ pub enum GameAction {
 }
 
 impl GameAction {
-    pub fn handle(&self) -> String {
+    pub fn handle(&self, _client_state: ClientPointer, _room: RoomPointer) -> String {
         match *self {
             Self::PrintText(ref some) =>  {
                 return some.clone();
@@ -56,6 +57,7 @@ pub struct GameObject {
 
 pub struct Room {
     pub addr: RoomAddr,
+    pub display: String,
     // Clients by their address
     pub clients: HashSet<SocketAddr>,
     pub links: Vec<RoomAddr>,

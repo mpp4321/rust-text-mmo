@@ -1,11 +1,12 @@
 #![feature(async_closure)]
 
 mod states;
+mod command_handlers;
 
 use std::{net::{SocketAddrV4, SocketAddr}, sync::Arc, collections::{HashMap, HashSet}};
+use command_handlers::{handle_touch, look};
 use lazy_static::lazy_static;
-use regex::Regex;
-use states::{ServerState, ClientState, ClientPointer, Room, RoomAddr, to_arc_mutex};
+use states::{ServerState, ClientState, ClientPointer, Room, RoomAddr, to_arc_mutex, GameObject, GameAction};
 use tokio::{net::{TcpListener, TcpStream}, io::{BufReader, AsyncBufReadExt, AsyncWriteExt}, sync::Mutex};
 
 macro_rules! escaped {
@@ -14,43 +15,44 @@ macro_rules! escaped {
     }
 }
 
-async fn process_client_command(_input: String, _addr: SocketAddr, _server_state: Arc<ServerState>, _my_client: ClientPointer) -> String {
-    //Manage server game state here
-
-    lazy_static! {
-        // touch <name> <action>
-        static ref OBJECT_USE_REGEX: Regex = Regex::new("touch (.+) (.+)").unwrap();
+macro_rules! escaped_str {
+    ($exp:expr) => {
+        format!("{}\n\r", $exp)
     }
+}
 
-    match &_input[.._input.find(" ").unwrap_or(0)] {
-        "touch" => {
-            if !OBJECT_USE_REGEX.is_match(&_input) {
-                return String::from("touch <object name> <action>");
-            }
-            let captures = OBJECT_USE_REGEX.captures(&_input).unwrap();
-            let object_name = captures.get(1).unwrap().as_str();
-            let object_action = captures.get(2).unwrap().as_str();
-            let room = _server_state.get_room(&_my_client.lock().await.current_room);
-            if room.is_none() {
-                return String::from("You belong to an invalid room.");
-            }
-            let room_un = room.unwrap();
-            let room_ref = room_un.lock().await;
-            if let Some(object) = room_ref.objects.get(object_name) {
-                let some_action = object.actions.get(object_action);
-                if let Some(action) = some_action {
-                    return action.handle();
-                } else {
-                    return "The object does not have that action".into();
-                }
-            } else {
-                return "The object does not exist".into();
-            }
-        },
+async fn process_builder_command(_input: String, _addr: SocketAddr, _server_state: Arc<ServerState>, _my_client: ClientPointer) -> String {
+
+    match &_input[.._input.find(" ").unwrap_or(_input.len())] {
+        "\\add" => {
+            //TODO add object to room
+        }
         _ => {}
     }
 
-    return String::from("HI");
+    "Nice builder command.".into()
+}
+
+async fn process_client_command(input: String, addr: SocketAddr, server_state: Arc<ServerState>, my_client: ClientPointer) -> String {
+    //Manage server game state here
+
+    if input.starts_with("\\") {
+        return process_builder_command(input, addr, server_state, my_client).await;
+    }
+
+    let temp_usize = input.find(" ").unwrap_or(input.len());
+    println!("{}", temp_usize);
+    match &input[..temp_usize] {
+        "touch" => {
+            return handle_touch(&input, server_state, my_client).await;
+        },
+        "look" => {
+            return look(&input, server_state, my_client).await;
+        }
+        _ => {}
+    }
+
+    return String::from("The room is quiet.");
 }
 
 async fn process(mut _socket: TcpStream, addr: SocketAddr, server_state: Arc<ServerState>) {
@@ -69,6 +71,8 @@ async fn process(mut _socket: TcpStream, addr: SocketAddr, server_state: Arc<Ser
             server_state.client_states.lock().await.retain(|a| a.blocking_lock().addr != addr);
             break;
         }
+        let string_input = string_input.replace(|a| a == '\r' || a == '\n', "");
+        println!("{}", string_input);
         let response = process_client_command(string_input.clone(), addr, server_state.clone(), client_state.clone()).await;
         write.write(escaped! {response}).await.expect("Write error");
     }
@@ -84,9 +88,21 @@ async fn main() -> std::io::Result<()> {
 
     rooms.insert("nexus".into(), to_arc_mutex(Room {
         addr: "nexus".into(),
+        display: escaped_str! {"The room is quiet... Except for a [sign]."},
         clients: HashSet::new(),
         links: vec![],
-        objects: HashMap::new(),
+        objects: {
+            let mut some_hash = HashMap::new();
+            some_hash.insert("sign".into(), GameObject {
+                display: escaped_str! {"Just a sign, I wonder what it says."},
+                actions: {
+                    HashMap::from([
+                        ("read".into(), GameAction::PrintText("You're gay.".into()))
+                    ])
+                }
+            });
+            some_hash
+        },
     }));
 
     let server_state = Arc::new(ServerState {
