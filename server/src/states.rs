@@ -1,8 +1,8 @@
-use std::{net::SocketAddr, sync::Arc, collections::{HashSet, HashMap}, slice::SliceIndex};
-
-use lazy_static::lazy_static;
-use regex::Regex;
-use tokio::sync::Mutex;
+use std::{net::SocketAddr, sync::Arc, collections::{HashSet, HashMap}, slice::SliceIndex};
+
+use lazy_static::lazy_static;
+use regex::Regex;
+use tokio::sync::Mutex;
 
 pub fn to_arc_mutex<T>(owned: T) -> Arc<Mutex<T>> {
     Arc::new(Mutex::new(owned))
