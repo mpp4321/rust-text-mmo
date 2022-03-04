@@ -55,6 +55,15 @@ pub struct GameObject {
     pub actions: HashMap<String, GameAction>
 }
 
+impl GameObject {
+    pub fn new(name: String) -> Self {
+        Self {
+            display: name,
+            actions: HashMap::new()
+        }
+    }
+}
+
 pub struct Room {
     pub addr: RoomAddr,
     pub display: String,

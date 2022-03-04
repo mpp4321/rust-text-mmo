@@ -4,7 +4,7 @@ mod states;
 mod command_handlers;
 
 use std::{net::{SocketAddrV4, SocketAddr}, sync::Arc, collections::{HashMap, HashSet}};
-use command_handlers::{handle_touch, look};
+use command_handlers::{handle_touch, look, add_object, describe_object, add_action};
 use lazy_static::lazy_static;
 use states::{ServerState, ClientState, ClientPointer, Room, RoomAddr, to_arc_mutex, GameObject, GameAction};
 use tokio::{net::{TcpListener, TcpStream}, io::{BufReader, AsyncBufReadExt, AsyncWriteExt}, sync::Mutex};
@@ -15,11 +15,17 @@ macro_rules! escaped {
     }
 }
 
-async fn process_builder_command(_input: String, _addr: SocketAddr, _server_state: Arc<ServerState>, _my_client: ClientPointer) -> String {
+async fn process_builder_command(input: String, _addr: SocketAddr, server_state: Arc<ServerState>, my_client: ClientPointer) -> String {
 
-    match &_input[.._input.find(" ").unwrap_or(_input.len())] {
+    match &input[..input.find(" ").unwrap_or(input.len())] {
         "\\add" => {
-            //TODO add object to room
+            add_object(&input, server_state, my_client).await;
+        },
+        "\\describe" => {
+            describe_object(&input, server_state, my_client).await;
+        }
+        "\\action" => {
+            add_action(&input, server_state, my_client).await;
         }
         _ => {}
     }
@@ -37,7 +43,7 @@ async fn process_client_command(input: String, addr: SocketAddr, server_state: A
     let temp_usize = input.find(" ").unwrap_or(input.len());
     println!("{}", temp_usize);
     match &input[..temp_usize] {
-        "touch" => {
+        "i" => {
             return handle_touch(&input, server_state, my_client).await;
         },
         "look" => {
