@@ -3,11 +3,11 @@
 mod states;
 mod command_handlers;
 
-use std::{net::{SocketAddrV4, SocketAddr}, sync::Arc, collections::{HashMap, HashSet}};
+use std::{net::{SocketAddrV4, SocketAddr}, sync::Arc};
 use command_handlers::{handle_touch, look, add_object, describe_object, add_action};
 use lazy_static::lazy_static;
-use states::{ServerState, ClientState, ClientPointer, Room, RoomAddr, to_arc_mutex, GameObject, GameAction};
-use tokio::{net::{TcpListener, TcpStream}, io::{BufReader, AsyncBufReadExt, AsyncWriteExt}, sync::Mutex};
+use states::{ServerState, ClientState, ClientPointer};
+use tokio::{net::{TcpListener, TcpStream}, io::{BufReader, AsyncBufReadExt, AsyncWriteExt}};
 
 macro_rules! escaped {
     ($exp:expr) => {
@@ -19,13 +19,19 @@ async fn process_builder_command(input: String, _addr: SocketAddr, server_state:
 
     match &input[..input.find(" ").unwrap_or(input.len())] {
         "\\add" => {
-            add_object(&input, server_state, my_client).await;
+            return add_object(&input, server_state, my_client).await;
         },
         "\\describe" => {
-            describe_object(&input, server_state, my_client).await;
+            return describe_object(&input, server_state, my_client).await;
         }
         "\\action" => {
-            add_action(&input, server_state, my_client).await;
+            return add_action(&input, server_state, my_client).await;
+        }
+        "\\save" => {
+            println!("attempting save");
+            server_state.save().expect("Failed to save server!!");
+            println!("attempting save");
+            return format!{"Nice save!"};
         }
         _ => {}
     }
@@ -48,6 +54,14 @@ async fn process_client_command(input: String, addr: SocketAddr, server_state: A
         },
         "look" => {
             return look(&input, server_state, my_client).await;
+        },
+        "help" => {
+            return format!{
+                "{}\n{}\n{}",
+                "i - interacts with object: i {object} {action}",
+                "look - reads the object's display text: look {object}",
+                "help - you're here"
+            };
         }
         _ => {}
     }
@@ -83,32 +97,8 @@ async fn process(mut _socket: TcpStream, addr: SocketAddr, server_state: Arc<Ser
 async fn main() -> std::io::Result<()> {
     let addr: SocketAddrV4 = "127.0.0.1:8080".parse().unwrap();
     let server = TcpListener::bind(addr).await?;
-    
-    let mut rooms: HashMap<RoomAddr, Arc<Mutex<Room>>> = HashMap::new();
 
-    rooms.insert("nexus".into(), to_arc_mutex(Room {
-        addr: "nexus".into(),
-        display: "The room is quiet... Except for a [@Csign@].".into(),
-        clients: HashSet::new(),
-        links: vec![],
-        objects: {
-            let mut some_hash = HashMap::new();
-            some_hash.insert("sign".into(), GameObject {
-                display: "Just a sign, I wonder what it says{@Cread@}.".into(),
-                actions: {
-                    HashMap::from([
-                        ("read".into(), GameAction::PrintText("You're gay.".into()))
-                    ])
-                }
-            });
-            some_hash
-        },
-    }));
-
-    let server_state = Arc::new(ServerState {
-        client_states: Arc::new(Mutex::new(vec![])),
-        rooms,
-    });
+    let server_state = Arc::new(ServerState::new());
     loop {
         let server_state = server_state.clone();
         let (socket, addr) = server.accept().await?;

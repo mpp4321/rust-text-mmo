@@ -10,3 +10,6 @@ edition = "2021"
 tokio = {version="*", features=["full"]}
 lazy_static = { version="*" }
 regex = "*"
+serde = "*"
+serde_json = "*"
+serde_derive = "*"

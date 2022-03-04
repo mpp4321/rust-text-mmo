@@ -1,0 +1,18 @@
+{
+  "nexus": {
+    "addr": "nexus",
+    "display": "The room is quiet... Except for a [@Csign@].",
+    "clients": [],
+    "links": [],
+    "objects": {
+      "sign": {
+        "display": "Just a sign, I wonder what it says{@Cread@}.",
+        "actions": {
+          "read": {
+            "PrintText": "You're gay."
+          }
+        }
+      }
+    }
+  }
+}
