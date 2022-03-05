@@ -1,5 +1,6 @@
 use std::{net::SocketAddr, sync::Arc, collections::{HashSet, HashMap}, fs::OpenOptions, io::{BufReader, BufWriter, Write}};
 
+use dyon::{Runtime, embed::PopVariable};
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde_derive::{Serialize, Deserialize};
@@ -9,7 +10,9 @@ pub fn to_arc_mutex<T>(owned: T) -> Arc<Mutex<T>> {
     Arc::new(Mutex::new(owned))
 }
 
+
 pub type ClientPointer = Arc<Mutex<ClientState>>;
+
 pub type RoomPointer = Arc<Mutex<Room>>;
 
 pub struct ClientState {
@@ -17,6 +20,8 @@ pub struct ClientState {
     pub is_edit_mode: bool,
     pub current_room: RoomAddr,
     pub name: String,
+    // Should work...
+    pub client_script_states: Arc<std::sync::Mutex<HashMap<String, String>>>
 }
 
 pub type RoomAddr = String;
@@ -24,14 +29,26 @@ pub type RoomAddr = String;
 #[derive(Serialize, Deserialize, Clone)]
 pub enum GameAction {
     None,
-    PrintText(String)
+    PrintText(String),
+    RunScript(String)
 }
 
 impl GameAction {
-    pub fn handle(&self, _client_state: ClientPointer, _room: RoomPointer) -> String {
+    pub async fn handle(&self, _client_state: ClientPointer, _room: RoomPointer, _runtime: Arc<Mutex<Runtime>>) -> String {
         match *self {
             Self::PrintText(ref some) =>  {
                 return some.clone();
+            },
+            Self::RunScript(ref some) =>  {
+                let return_type = crate::dyon_inter::load_and_run(&format!{ "dyon/{}.dyon", some }, _client_state.clone(), &_runtime).await;
+                if return_type.is_err() {
+                    return format! { "Code error, script did not return a String" };
+                }
+                let return_type = return_type.unwrap().0.unwrap();
+                if let dyon::Variable::Str(arc_str) = return_type {
+                    return (*arc_str).clone();
+                }
+                format!{ "Script returned non-string type in home fn" }
             }
             _ => { String::from("Unhandled") }
         }
@@ -42,10 +59,15 @@ impl GameAction {
 
         lazy_static! {
             static ref PRINT_TEXT_REGEX: Regex = Regex::new("PrintText (.+)").unwrap();
+            static ref RUN_SCRIPT_REGEX: Regex = Regex::new("RunScript (.+)").unwrap();
         }
 
         if PRINT_TEXT_REGEX.is_match(string.as_str()) {
             return PrintText(PRINT_TEXT_REGEX.captures(&string).unwrap().get(1).expect("Regex error").as_str().into())
+        }
+
+        if RUN_SCRIPT_REGEX.is_match(string.as_str()) {
+            return RunScript(RUN_SCRIPT_REGEX.captures(&string).unwrap().get(1).expect("Regex error").as_str().into())
         }
 
         GameAction::None
@@ -83,7 +105,8 @@ impl ClientState {
             addr,
             is_edit_mode: false,
             current_room: "nexus".into(),
-            name: String::new()
+            name: String::new(),
+            client_script_states: Arc::new(std::sync::Mutex::new(HashMap::<String, String>::new()))
         }
     }
 
@@ -96,6 +119,7 @@ impl ClientState {
 pub struct ServerState {
     pub client_states: Arc<Mutex<Vec<ClientPointer>>>,
     pub rooms: HashMap<RoomAddr, Arc<Mutex<Room>>>,
+    pub runtime: Arc<Mutex<dyon::Runtime>>
 }
 
 impl ServerState {
@@ -135,7 +159,8 @@ impl ServerState {
 
         Self {
             client_states: to_arc_mutex(vec![]),
-            rooms: map
+            rooms: map,
+            runtime: to_arc_mutex(dyon::Runtime::new()),
         }
     }
 

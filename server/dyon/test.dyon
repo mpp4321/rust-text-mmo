@@ -1,0 +1,11 @@
+
+fn home(state) -> str {
+  if get_state(state, "test") != none() {
+    inner_val := unwrap(get_state(state, "test"))
+	println(inner_val)
+	set_state(state, "test", str(unwrap(num(inner_val)) + 1))
+  } else {
+    set_state(state, "test", "1")
+  }
+  return "You've read this sign " + unwrap(get_state(state, "test")) + " times."
+}

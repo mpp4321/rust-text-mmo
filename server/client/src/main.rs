@@ -1,6 +1,4 @@
-
-
-use std::{sync::Arc, ops::Range};
+use std::{sync::Arc, ops::Range, io::Read};
 
 use fltk::{
     app,
@@ -8,14 +6,15 @@ use fltk::{
     prelude::{DisplayExt, GroupExt, WidgetBase, WidgetExt},
     text::{SimpleTerminal, StyleTableEntry, TextBuffer},
     utils,
-    window::Window,
+    window::Window, browser::FileBrowser, dialog,
 };
+
 use lazy_static::lazy_static;
 use regex::{Regex, Captures};
 use tokio::{sync::Mutex, net::TcpSocket, io::{BufReader, BufWriter, AsyncWriteExt, AsyncBufReadExt}};
 
-const WIDTH: i32 = 640;
-const HEIGHT: i32 = 480;
+const WIDTH: i32 = 1024;
+const HEIGHT: i32 = 640;
 
 pub trait TerminalFuncs {
     fn append_txt(&mut self, txt: &str);
@@ -61,9 +60,39 @@ impl TerminalFuncs for SimpleTerminal {
     }
 
     fn run_command(&mut self, cmd: &str, _: app::Receiver<bool>, queue: Arc<Mutex<Vec<String>>>) {
-        let cmd: String = format!("{}\n", cmd);
+        let mut cmd: String = format!("{}", cmd);
+
+        // If we are sending a script open file dialog pause until responds and then send contents
+        // in format of \script script_name:{file contents} then server will parse it and save
+        if cmd.starts_with("\\script") {
+            let mut chooser = dialog::FileChooser::new(
+                ".",
+                "*",
+                dialog::FileChooserType::Single,
+                "Choose a script"
+            );
+            chooser.show();
+            chooser.window().set_pos(300, 300);
+
+            while chooser.shown() {
+                app::wait();
+            }
+
+            if let Some(file) = chooser.value(1) {
+                let mut file_contents = String::new();
+                let _ = std::io::BufReader::new(std::fs::File::open(file).unwrap()).read_to_string(&mut file_contents).expect("Failed to read file");
+                // Server terminating char is new line so we replace with #n and then parse on
+                // server
+                cmd = format!("{}{}", cmd, file_contents).replace("\n", "#n");
+            } else {
+                return;
+            }
+        }
+
+
         tokio::spawn(async move {
-            queue.lock().await.push(cmd.into());
+            // Server terminating char is new line since we read_line
+            queue.lock().await.push(format!{"{}\n", cmd});
         });
     }
 

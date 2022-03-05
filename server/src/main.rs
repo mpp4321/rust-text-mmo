@@ -1,10 +1,11 @@
 #![feature(async_closure)]
 
+mod dyon_inter;
 mod states;
 mod command_handlers;
 
 use std::{net::{SocketAddrV4, SocketAddr}, sync::Arc};
-use command_handlers::{handle_touch, look, add_object, describe_object, add_action};
+use command_handlers::{handle_touch, look, add_object, describe_object, add_action, upload_script};
 use lazy_static::lazy_static;
 use states::{ServerState, ClientState, ClientPointer};
 use tokio::{net::{TcpListener, TcpStream}, io::{BufReader, AsyncBufReadExt, AsyncWriteExt}};
@@ -16,23 +17,23 @@ macro_rules! escaped {
 }
 
 async fn process_builder_command(input: String, _addr: SocketAddr, server_state: Arc<ServerState>, my_client: ClientPointer) -> String {
-
     match &input[..input.find(" ").unwrap_or(input.len())] {
+        "\\script" => {
+            return upload_script(&input).await;
+        },
         "\\add" => {
             return add_object(&input, server_state, my_client).await;
         },
         "\\describe" => {
             return describe_object(&input, server_state, my_client).await;
-        }
+        },
         "\\action" => {
             return add_action(&input, server_state, my_client).await;
-        }
+        },
         "\\save" => {
-            println!("attempting save");
             server_state.save().expect("Failed to save server!!");
-            println!("attempting save");
             return format!{"Nice save!"};
-        }
+        },
         _ => {}
     }
 
@@ -86,7 +87,6 @@ async fn process(mut _socket: TcpStream, addr: SocketAddr, server_state: Arc<Ser
             break;
         }
         let string_input = string_input.replace(|a| a == '\r' || a == '\n', "");
-        println!("{}", string_input);
         let response = process_client_command(string_input.clone(), addr, server_state.clone(), client_state.clone()).await;
         write.write(escaped! {response}).await.expect("Write error");
     }
@@ -99,6 +99,7 @@ async fn main() -> std::io::Result<()> {
     let server = TcpListener::bind(addr).await?;
 
     let server_state = Arc::new(ServerState::new());
+    //dyon_inter::load_and_run(&"dyon/test.dyon".into(), &server_state.runtime).await?;
     loop {
         let server_state = server_state.clone();
         let (socket, addr) = server.accept().await?;
