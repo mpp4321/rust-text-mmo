@@ -77,19 +77,21 @@ impl GameAction {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct GameObject {
     pub display: String,
+    pub name: String,
     pub actions: HashMap<String, GameAction>
 }
 
 impl GameObject {
     pub fn new(name: String) -> Self {
         Self {
+            name: name.clone(),
             display: name,
             actions: HashMap::new()
         }
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct Room {
     pub addr: RoomAddr,
     pub display: String,
@@ -97,6 +99,15 @@ pub struct Room {
     pub clients: HashSet<SocketAddr>,
     pub links: Vec<RoomAddr>,
     pub objects: HashMap<String, GameObject>
+}
+
+impl Room {
+    fn new(addr: RoomAddr) -> Self {
+        Self {
+            addr,
+            ..Default::default()
+        }
+    }
 }
 
 impl ClientState {
@@ -118,7 +129,7 @@ impl ClientState {
 
 pub struct ServerState {
     pub client_states: Arc<Mutex<Vec<ClientPointer>>>,
-    pub rooms: HashMap<RoomAddr, Arc<Mutex<Room>>>,
+    pub rooms: Mutex<HashMap<RoomAddr, Arc<Mutex<Room>>>>,
     pub runtime: Arc<Mutex<dyon::Runtime>>
 }
 
@@ -139,13 +150,14 @@ impl ServerState {
         if map.len() == 0 {
             map.insert("nexus".into(), to_arc_mutex(Room {
                 addr: "nexus".into(),
-                display: "The room is quiet... Except for a [@Csign@].".into(),
+                display: "The room is quiet... Except for a [@Csign].".into(),
                 clients: HashSet::new(),
                 links: vec![],
                 objects: {
                     let mut some_hash = HashMap::new();
                     some_hash.insert("sign".into(), GameObject {
-                        display: "Just a sign, I wonder what it says{@Cread@}.".into(),
+                        display: "Just a sign, I wonder what it says{@Cread}.".into(),
+                        name: "sign".into(),
                         actions: {
                             HashMap::from([
                                 ("read".into(), GameAction::PrintText("Good job, you learned how to interact with objects!".into()))
@@ -159,7 +171,7 @@ impl ServerState {
 
         Self {
             client_states: to_arc_mutex(vec![]),
-            rooms: map,
+            rooms: Mutex::new(map),
             runtime: to_arc_mutex(dyon::Runtime::new()),
         }
     }
@@ -171,13 +183,27 @@ impl ServerState {
         std::fs::create_dir_all("database/").expect("Failed to create database directory!");
         let database_file = options.open(PATH).expect(&format!{"Failed to open {}", PATH});
         let mut database_file = BufWriter::new(database_file);
-        let map: HashMap<String, Room> = self.rooms.iter()
+        let map: HashMap<String, Room> = self.rooms.try_lock().expect("Failed to acquire rooms").iter()
             .map(|(a,b)| (a.clone(), b.try_lock().unwrap().clone())).collect();
         database_file.write(serde_json::to_string(&map).unwrap().as_bytes())?;
         Ok(())
     }
 
     pub fn get_room(&self, addr: &RoomAddr) -> Option<Arc<Mutex<Room>>> {
-        self.rooms.get(addr).map(|a| a.clone())
+        let locked_room = self.rooms.try_lock();
+        if locked_room.is_err() {
+            return None;
+        }
+        locked_room.unwrap().get(addr).map(|a| a.clone())
+    }
+
+    pub fn new_room(&self, addr: &RoomAddr) {
+        let locked_room = self.rooms.try_lock();
+        if locked_room.is_err() {
+            return;
+        }
+        locked_room.unwrap().insert(
+            addr.clone(), Arc::new(Mutex::new(Room::new(addr.clone())))
+        );
     }
 }

@@ -6,7 +6,7 @@ use fltk::{
     prelude::{DisplayExt, GroupExt, WidgetBase, WidgetExt},
     text::{SimpleTerminal, StyleTableEntry, TextBuffer},
     utils,
-    window::Window, browser::FileBrowser, dialog,
+    window::Window, dialog,
 };
 
 use lazy_static::lazy_static;
@@ -25,7 +25,7 @@ pub trait TerminalFuncs {
 impl TerminalFuncs for SimpleTerminal {
     fn append_txt(&mut self, txt: &str) {
         lazy_static! {
-            static ref REGEX_TXT: Regex = Regex::new("@([A-Z])(.+)@").unwrap();
+            static ref REGEX_TXT: Regex = Regex::new("@([A-Z])([^@]+)").unwrap();
         }
         if REGEX_TXT.is_match(txt) {
             let matches = REGEX_TXT.captures_iter(&txt).collect::<Vec<Captures>>();
@@ -46,7 +46,7 @@ impl TerminalFuncs for SimpleTerminal {
             self.style_buffer().unwrap().append(&"A".repeat(txt.len()));
             for mod_txt in mods {
                 let len = mod_txt.0.len();
-                self.style_buffer().unwrap().replace(mod_txt.0.start as i32 + start_index , mod_txt.0.end as i32 + start_index, mod_txt.1.repeat(len).as_str());
+                self.style_buffer().unwrap().replace(mod_txt.0.start as i32 + start_index, mod_txt.0.end as i32 + start_index, mod_txt.1.repeat(len).as_str());
             }
         } else {
             self.append(txt);

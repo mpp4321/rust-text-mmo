@@ -5,10 +5,12 @@ mod states;
 mod command_handlers;
 
 use std::{net::{SocketAddrV4, SocketAddr}, sync::Arc};
-use command_handlers::{handle_touch, look, add_object, describe_object, add_action, upload_script};
+use command_handlers::{handle_touch, look, add_object, describe_object, add_action, upload_script, add_link};
 use lazy_static::lazy_static;
 use states::{ServerState, ClientState, ClientPointer};
-use tokio::{net::{TcpListener, TcpStream}, io::{BufReader, AsyncBufReadExt, AsyncWriteExt}};
+use tokio::{net::{TcpListener, TcpStream}, io::{BufReader, AsyncBufReadExt, AsyncWriteExt}};
+
+use crate::command_handlers::move_into;
 
 macro_rules! escaped {
     ($exp:expr) => {
@@ -23,6 +25,9 @@ async fn process_builder_command(input: String, _addr: SocketAddr, server_state:
         },
         "\\add" => {
             return add_object(&input, server_state, my_client).await;
+        },
+        "\\link" => {
+            return add_link(&input, server_state, my_client).await;
         },
         "\\describe" => {
             return describe_object(&input, server_state, my_client).await;
@@ -48,7 +53,6 @@ async fn process_client_command(input: String, addr: SocketAddr, server_state: A
     }
 
     let temp_usize = input.find(" ").unwrap_or(input.len());
-    println!("{}", temp_usize);
     match &input[..temp_usize] {
         "i" => {
             return handle_touch(&input, server_state, my_client).await;
@@ -56,11 +60,15 @@ async fn process_client_command(input: String, addr: SocketAddr, server_state: A
         "look" => {
             return look(&input, server_state, my_client).await;
         },
+        "move" => {
+            return move_into(&input, server_state, my_client).await;
+        },
         "help" => {
             return format!{
-                "{}\n{}\n{}",
+                "{}\n{}\n{}\n{}",
                 "i - interacts with object: i {object} {action}",
                 "look - reads the object's display text: look {object}",
+                "move - move into a different area: move {area name}",
                 "help - you're here"
             };
         }
@@ -78,7 +86,7 @@ async fn process(mut _socket: TcpStream, addr: SocketAddr, server_state: Arc<Ser
         client_state.clone()
     );
     //write.write(escaped!("\x1B[2J")).await.unwrap();
-    write.write(escaped!("@DWelcome to the server.@")).await.unwrap();
+    write.write(escaped!("@DWelcome to the server.")).await.unwrap();
     loop {
         let mut string_input = String::new();
         reader.read_line(&mut string_input).await.expect("Read error");

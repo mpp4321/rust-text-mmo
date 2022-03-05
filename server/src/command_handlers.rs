@@ -4,6 +4,55 @@ use regex::Regex;
 
 use crate::{lazy_static, states::{ServerState, ClientPointer, GameObject, GameAction}};
 
+pub async fn add_link(input: &String, server_state: Arc<ServerState>, client: ClientPointer) -> String {
+    lazy_static! {
+        static ref ADD_LINK_REGEX: Regex = Regex::new(r#"\\link ([^ ]+)"#).unwrap();
+    }
+
+    // TODO make this a macro
+    if !ADD_LINK_REGEX.is_match(&input) {
+        return String::from("\\link <to place>");
+    }
+
+    let captures = ADD_LINK_REGEX.captures(&input).unwrap();
+    let object_name = String::from(captures.get(1).unwrap().as_str());
+    let room = server_state.get_room(&client.lock().await.current_room);
+    if let Some(room) = room {
+        let mut room = room.lock().await;
+        if server_state.get_room(&object_name).is_none() {
+            server_state.new_room(&object_name);
+        }
+        room.links.push(object_name.into());
+        return format!{"Added"};
+    }
+    return format!{"Not in a room?"};
+}
+
+pub async fn move_into(input: &String, server_state: Arc<ServerState>, client: ClientPointer) -> String {
+    lazy_static! {
+        // touch <name> <action>
+        static ref MOVE_REGEX: Regex = Regex::new("move ([^ ]+)").unwrap();
+    }
+
+    let room = server_state.get_room(&client.lock().await.current_room);
+    if room.is_none() {
+        return String::from("You belong to an invalid room.");
+    }
+    let room_un = room.unwrap();
+    let room_ref = room_un.lock().await;
+    if !MOVE_REGEX.is_match(input) {
+        return format!{"move <link name>"};
+    }
+    let captures = MOVE_REGEX.captures(&input).unwrap();
+    let link_name = captures.get(1).unwrap().as_str();
+    if room_ref.links.contains(&link_name.into()) {
+        client.lock().await.current_room = link_name.into();
+        return format!{"You move into {}", link_name};
+    } else {
+        return "That area does not exist here.".into();
+    }
+}
+
 //Utility fn for upload_script
 fn save_script(file: &str, script: String) {
     let mut options = OpenOptions::new();
@@ -159,10 +208,14 @@ pub async fn look(_input: &String, _server_state: Arc<ServerState>, _my_client: 
     if room.is_none() {
         return String::from("You belong to an invalid room.");
     }
+
     let room_un = room.unwrap();
     let room_ref = room_un.lock().await;
     if !LOOK_REGEX.is_match(_input) {
-        return room_ref.display.clone();
+        // When displaying room code we also want to show available objects and links in room
+        let link_string = room_ref.links.iter().fold("\n@CLinks:\n".into(), |a, b| format!{"{}\n{}\n", a, b});
+        let objects_string = room_ref.objects.values().map(|a| &a.name).fold("\n\n@CObjects:".into(), |a, b| format!{"{}\n{}\n", a, b});
+        return format!{"{}{}{}", room_ref.display.clone(), objects_string, link_string};
     }
     let captures = LOOK_REGEX.captures(&_input).unwrap();
     let object_name = captures.get(1).unwrap().as_str();
