@@ -1,0 +1,16 @@
+{"plain":{"addr":"plain","display":"","clients":[],"links":[],"objects":{}},"nexus":{"addr":"nexus","display":"The room is quiet... Except for a [@Csign].","clients":[],"links":["plain"],"objects":{"sign":{"display":"Just a sign, I wonder what it says{@Cread}.","name":"sign","actions":{"read":{"PrintText":"Good job, you learned how to interact with objects!"}}}}}}t in all directions.","clients":[],"links":[],"objects":{"flower":{"display":"A beautiful @Cblue@A flower.","name":"flower","actions":{"pluck":{"RunScript":"flower"}}}}}} stretches out in all directions.",
+    "clients": [],
+    "links": [],
+    "objects": {
+      "flower": {
+        "display": "A beautiful @Cblue@A flower.",
+        "name": "flower",
+        "actions": {
+          "pluck": {
+            "RunScript": "flower"
+          }
+        }
+      }
+    }
+  }
+}

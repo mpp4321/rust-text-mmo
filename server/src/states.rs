@@ -1,8 +1,9 @@
-use std::{net::SocketAddr, sync::Arc, collections::{HashSet, HashMap}, fs::OpenOptions, io::{BufReader, BufWriter, Write}};
+use std::{net::SocketAddr, sync::Arc, collections::{HashSet, HashMap}, fs::OpenOptions, io::{BufReader, BufWriter, Write, Read}};
 
-use dyon::{Runtime, embed::PopVariable};
+use dyon::Runtime;
 use lazy_static::lazy_static;
 use regex::Regex;
+use serde::{ser::SerializeStruct, Deserializer};
 use serde_derive::{Serialize, Deserialize};
 use tokio::sync::Mutex;
 
@@ -10,18 +11,44 @@ pub fn to_arc_mutex<T>(owned: T) -> Arc<Mutex<T>> {
     Arc::new(Mutex::new(owned))
 }
 
+pub fn hmmutex<'de, D>(d: D) -> Result<Arc<std::sync::Mutex<HashMap<String, String>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let map_val: HashMap<String, String> = serde::de::Deserialize::deserialize(d)?;
+    return Ok(Arc::new(std::sync::Mutex::new(map_val)));
+}
 
 pub type ClientPointer = Arc<Mutex<ClientState>>;
 
 pub type RoomPointer = Arc<Mutex<Room>>;
 
+#[derive(Deserialize)]
 pub struct ClientState {
-    pub addr: SocketAddr,
+    pub addr: Option<SocketAddr>,
+
     pub is_edit_mode: bool,
     pub current_room: RoomAddr,
     pub name: String,
     // Should work...
+    #[serde(deserialize_with = "hmmutex")]
     pub client_script_states: Arc<std::sync::Mutex<HashMap<String, String>>>
+}
+
+impl serde::Serialize for ClientState {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        let mut client_state = serializer.serialize_struct("ClientState", 4)?;
+        client_state.serialize_field("is_edit_mode", &self.is_edit_mode)?;
+        client_state.serialize_field("current_room", &self.current_room)?;
+        client_state.serialize_field("name", &self.name)?;
+        client_state.serialize_field("client_script_states",
+                                     &self.client_script_states.lock()
+                                     .map(|a| a.clone())
+                                     .unwrap_or(HashMap::<String, String>::new()))?;
+        client_state.end()
+    }
 }
 
 pub type RoomAddr = String;
@@ -111,7 +138,8 @@ impl Room {
 }
 
 impl ClientState {
-    pub fn new(addr: SocketAddr) -> Self {
+
+    pub fn new(addr: Option<SocketAddr>) -> Self {
         Self {
             addr,
             is_edit_mode: false,
@@ -174,6 +202,33 @@ impl ServerState {
             rooms: Mutex::new(map),
             runtime: to_arc_mutex(dyon::Runtime::new()),
         }
+    }
+
+    pub async fn save_client(&self, client_state: ClientPointer) -> std::io::Result<()> {
+        let mut options = OpenOptions::new();
+        let path: String = format!{"database/{}.json", client_state.lock().await.name};
+        options.create(true).write(true);
+        std::fs::create_dir_all("database/").expect("Failed to create database directory!");
+        let mut database_file = options.open(&path).expect(&format!{"Failed to open {}", path});
+        database_file.write(
+            serde_json::to_string(&*client_state.lock().await).unwrap().as_bytes()
+        )?;
+        Ok(())
+    }
+
+    pub async fn load_client(&self, name: String) -> Option<ClientState> {
+        let mut options = OpenOptions::new();
+        let path: String = format!{"database/{}.json", name};
+        options.create(false).read(true);
+        std::fs::create_dir_all("database/").expect("Failed to create database directory!");
+        let database_file = options.open(&path);
+        if database_file.is_err() {
+            return None;
+        }
+        let mut database_file = database_file.unwrap();
+        let mut string_buf = String::new();
+        database_file.read_to_string(&mut string_buf).expect("Failed to read in client");
+        return serde_json::from_str(&string_buf).map(|a| Some(a)).unwrap_or(None);
     }
 
     pub fn save(&self) -> std::io::Result<()> {

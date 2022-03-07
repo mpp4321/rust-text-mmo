@@ -4,6 +4,29 @@ use regex::Regex;
 
 use crate::{lazy_static, states::{ServerState, ClientPointer, GameObject, GameAction}};
 
+pub async fn login(input: &String, server_state: Arc<ServerState>, client: ClientPointer) -> String {
+    lazy_static! {
+        static ref LOGIN_REGEX: Regex = Regex::new(r#"\\login ([^ ]+)"#).unwrap();
+    }
+
+    if !LOGIN_REGEX.is_match(&input) {
+        return String::from("\\login <username>");
+    }
+    let captures = LOGIN_REGEX.captures(&input).unwrap();
+    let username = String::from(captures.get(1).unwrap().as_str());
+
+    let new_client = server_state.load_client(username).await;
+
+    if let Some(new_client) = new_client {
+        let mut client_ref = client.lock().await;
+        let addr_from = client_ref.addr;
+        *client_ref = new_client;
+        return format!{"Logged in!"};
+    }
+
+    format!{"That is not a valid user"}
+}
+
 pub async fn add_link(input: &String, server_state: Arc<ServerState>, client: ClientPointer) -> String {
     lazy_static! {
         static ref ADD_LINK_REGEX: Regex = Regex::new(r#"\\link ([^ ]+)"#).unwrap();
